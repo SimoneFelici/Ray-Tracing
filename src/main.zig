@@ -1,27 +1,24 @@
 const std = @import("std");
-const zigRT = @import("zigRT");
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try zigRT.bufferedPrint();
-}
+    const img_width: u32 = 256;
+    const img_height: u32 = 256;
+    var stdout_buffer: [1024]u8 = undefined;
+    var file_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &file_writer.interface;
 
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
+    try stdout.print("P3\n{d} {d}\n255\n", .{ img_width, img_height });
+    for (0..img_height) |j| {
+        for (0..img_width) |i| {
+            const r = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(img_width - 1));
+            const g = @as(f64, @floatFromInt(j)) / @as(f64, @floatFromInt(img_height - 1));
+            const b = 0.0;
 
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
+            const ir: u8 = @intFromFloat(255.999 * r);
+            const ig: u8 = @intFromFloat(255.999 * g);
+            const ib: u8 = @intFromFloat(255.999 * b);
+            try stdout.print("{d} {d} {d}\n", .{ ir, ig, ib });
         }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
+    }
+    try stdout.flush();
 }
