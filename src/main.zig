@@ -19,16 +19,31 @@ const Ray = struct {
     }
 };
 
+fn hit_sphere(center: Vec3, radius: f64, r: Ray) bool {
+    const oc = center - r.origin;
+
+    const a = @reduce(.Add, r.dir * r.dir);
+    const b = -2.0 * @reduce(.Add, r.dir * oc);
+    const c = @reduce(.Add, oc * oc) - radius * radius;
+
+    const discriminant = b * b - 4.0 * a * c;
+    return discriminant >= 0.0;
+}
+
 inline fn unit_vector(v: Vec3) Vec3 {
     const len = @sqrt(@reduce(.Add, v * v));
     return v / vsplat(len);
 }
 
 fn ray_color(r: Ray) Vec3 {
+    if (hit_sphere(@as(Vec3, .{ 0.0, 0.0, -1.0 }), 0.5, r)) {
+        return @as(Vec3, .{ 1.0, 0.0, 0.0 });
+    }
+
     const unit_direction = unit_vector(r.dir);
     const a: f64 = 0.5 * (unit_direction[1] + 1.0);
-    return vsplat(1.0 - a) * @as(Vec3, .{ 1.0, 1.0, 1.0 }) +
-        vsplat(a) * @as(Vec3, .{ 0.5, 0.7, 1.0 });
+
+    return @as(Vec3, .{ 1.0, 1.0, 1.0 }) * vsplat(1.0 - a) + @as(Vec3, .{ 0.5, 0.7, 1.0 }) * vsplat(a);
 }
 
 pub fn write_color(pixel_color: Vec3) !void {
@@ -56,7 +71,6 @@ pub fn main() !void {
     const viewport_u: Vec3 = .{ viewport_width, 0.0, 0.0 };
     const viewport_v: Vec3 = .{ 0.0, -viewport_height, 0.0 };
 
-    // dividi per float “splat-tato”
     const pixel_delta_u = viewport_u / vsplat(f_img_width);
     const pixel_delta_v = viewport_v / vsplat(f_img_height);
 
