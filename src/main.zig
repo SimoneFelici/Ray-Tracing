@@ -19,15 +19,17 @@ const Ray = struct {
     }
 };
 
-fn hit_sphere(center: Vec3, radius: f64, r: Ray) bool {
+fn hit_sphere(center: Vec3, radius: f64, r: Ray) f64 {
     const oc = center - r.origin;
 
     const a = @reduce(.Add, r.dir * r.dir);
-    const b = -2.0 * @reduce(.Add, r.dir * oc);
+    const h = @reduce(.Add, r.dir * oc);
     const c = @reduce(.Add, oc * oc) - radius * radius;
 
-    const discriminant = b * b - 4.0 * a * c;
-    return discriminant >= 0.0;
+    const discriminant = h * h - a * c;
+    if (discriminant < 0.0) return -1.0;
+
+    return (h - std.math.sqrt(discriminant)) / a;
 }
 
 inline fn unit_vector(v: Vec3) Vec3 {
@@ -36,8 +38,12 @@ inline fn unit_vector(v: Vec3) Vec3 {
 }
 
 fn ray_color(r: Ray) Vec3 {
-    if (hit_sphere(@as(Vec3, .{ 0.0, 0.0, -1.0 }), 0.5, r)) {
-        return @as(Vec3, .{ 1.0, 0.0, 0.0 });
+    const center = @as(Vec3, .{ 0.0, 0.0, -1.0 });
+    const t = hit_sphere(center, 0.5, r);
+
+    if (t > 0.0) {
+        const N = unit_vector(r.at(t) - center);
+        return (N + @as(Vec3, .{ 1.0, 1.0, 1.0 })) * vsplat(0.5);
     }
 
     const unit_direction = unit_vector(r.dir);
@@ -55,7 +61,7 @@ pub fn write_color(pixel_color: Vec3) !void {
 
 pub fn main() !void {
     const aspect_ratio = 16.0 / 9.0;
-    const img_width = 400;
+    const img_width = 800;
     comptime var img_height: usize = @intFromFloat(@as(f64, @floatFromInt(img_width)) / aspect_ratio);
     if (img_height < 1) img_height = 1;
 
