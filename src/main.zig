@@ -10,12 +10,59 @@ inline fn vsplat(x: f64) Vec3 {
     return @as(Vec3, @splat(x));
 }
 
-const Ray = struct {
+pub const Ray = struct {
     origin: Vec3,
     dir: Vec3,
 
     fn at(self: @This(), t: f64) Vec3 {
         return self.origin + vsplat(t) * self.dir;
+    }
+};
+
+pub const Hit = struct {
+    p: Vec3,
+    n: Vec3,
+    t: f64,
+    front_face: bool,
+
+    pub fn set_face_normal(self: *Hit, ray: Ray, outward_normal: Vec3) void {
+        const is_front = @reduce(.Add, ray.dir * outward_normal) < 0.0;
+        self.front_face = is_front;
+        self.n = if (is_front) outward_normal else -outward_normal;
+    }
+};
+
+pub const Sphere = struct {
+    center: Vec3,
+    radius: f64,
+
+    pub fn hit(self: *const Sphere, ray: Ray, ray_tmin: f64, ray_tmax: f64) ?Hit {
+        const oc: Vec3 = self.center - ray.origin;
+
+        const a = @reduce(.Add, ray.dir * ray.dir);
+        const h = @reduce(.Add, ray.dir * oc);
+        const c = @reduce(.Add, oc * oc) - self.radius * self.radius;
+
+        const discriminant = h * h - a * c;
+        if (discriminant < 0.0) return null;
+
+        const sqrtd = std.math.sqrt(discriminant);
+
+        var root = (h - sqrtd) / a;
+        if (root <= ray_tmin or root >= ray_tmax) {
+            root = (h + sqrtd) / a;
+            if (root <= ray_tmin or root >= ray_tmax) return null;
+        }
+        var rec = Hit{
+            .p = ray.at(root),
+            .n = undefined,
+            .t = root,
+            .front_face = undefined,
+        };
+
+        const outward = (rec.p - self.center) / vsplat(self.radius);
+        rec.set_face_normal(ray, outward);
+        return rec;
     }
 };
 
