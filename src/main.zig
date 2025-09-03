@@ -26,33 +26,38 @@ pub const Hit = struct {
     front_face: bool,
 
     pub fn set_face_normal(self: *Hit, ray: Ray, outward_normal: Vec3) void {
-        const is_front = @reduce(.Add, ray.dir * outward_normal) < 0.0;
-        self.front_face = is_front;
-        self.n = if (is_front) outward_normal else -outward_normal;
+        const front = @reduce(.Add, ray.dir * outward_normal) < 0.0;
+        self.front_face = front;
+        self.n = if (front) outward_normal else -outward_normal;
     }
 };
+
+inline fn unit_vector(v: Vec3) Vec3 {
+    const len = @sqrt(@reduce(.Add, v * v));
+    return v / vsplat(len);
+}
 
 pub const Sphere = struct {
     center: Vec3,
     radius: f64,
 
-    pub fn hit(self: *const Sphere, ray: Ray, ray_tmin: f64, ray_tmax: f64) ?Hit {
-        const oc: Vec3 = self.center - ray.origin;
-
+    pub fn hit(self: Sphere, ray: Ray, tmin: f64, tmax: f64) ?Hit {
+        const oc = self.center - ray.origin;
         const a = @reduce(.Add, ray.dir * ray.dir);
         const h = @reduce(.Add, ray.dir * oc);
         const c = @reduce(.Add, oc * oc) - self.radius * self.radius;
 
-        const discriminant = h * h - a * c;
-        if (discriminant < 0.0) return null;
+        const disc = h * h - a * c;
+        if (disc < 0.0) return null;
 
-        const sqrtd = std.math.sqrt(discriminant);
+        const sqrtd = std.math.sqrt(disc);
 
         var root = (h - sqrtd) / a;
-        if (root <= ray_tmin or root >= ray_tmax) {
+        if (root <= tmin or root >= tmax) {
             root = (h + sqrtd) / a;
-            if (root <= ray_tmin or root >= ray_tmax) return null;
+            if (root <= tmin or root >= tmax) return null;
         }
+
         var rec = Hit{
             .p = ray.at(root),
             .n = undefined,
@@ -66,36 +71,41 @@ pub const Sphere = struct {
     }
 };
 
-fn hit_sphere(center: Vec3, radius: f64, r: Ray) f64 {
-    const oc = center - r.origin;
+const Hittable = union(enum) {
+    sphere: Sphere,
 
-    const a = @reduce(.Add, r.dir * r.dir);
-    const h = @reduce(.Add, r.dir * oc);
-    const c = @reduce(.Add, oc * oc) - radius * radius;
+    pub fn hit(self: Hittable, r: Ray, tmin: f64, tmax: f64) ?Hit {
+        return switch (self) {
+            .sphere => |s| s.hit(r, tmin, tmax),
+        };
+    }
+};
 
-    const discriminant = h * h - a * c;
-    if (discriminant < 0.0) return -1.0;
+const HittableList = struct {
+    objects: []const Hittable,
 
-    return (h - std.math.sqrt(discriminant)) / a;
-}
+    pub fn hit(self: *const HittableList, r: Ray, tmin: f64, tmax: f64) ?Hit {
+        var closest = tmax;
+        var best: ?Hit = null;
 
-inline fn unit_vector(v: Vec3) Vec3 {
-    const len = @sqrt(@reduce(.Add, v * v));
-    return v / vsplat(len);
-}
+        for (self.objects) |obj| {
+            if (obj.hit(r, tmin, closest)) |h| {
+                closest = h.t;
+                best = h;
+            }
+        }
+        return best;
+    }
+};
 
-fn ray_color(r: Ray) Vec3 {
-    const center = @as(Vec3, .{ 0.0, 0.0, -1.0 });
-    const t = hit_sphere(center, 0.5, r);
-
-    if (t > 0.0) {
-        const N = unit_vector(r.at(t) - center);
-        return (N + @as(Vec3, .{ 1.0, 1.0, 1.0 })) * vsplat(0.5);
+fn ray_color(r: Ray, world: *const HittableList) Vec3 {
+    if (world.hit(r, 0.001, std.math.inf(f64))) |rec| {
+        // Visualizza la normale come colore: 0.5 * (n + 1)
+        return (rec.n + @as(Vec3, .{ 1.0, 1.0, 1.0 })) * vsplat(0.5);
     }
 
     const unit_direction = unit_vector(r.dir);
     const a: f64 = 0.5 * (unit_direction[1] + 1.0);
-
     return @as(Vec3, .{ 1.0, 1.0, 1.0 }) * vsplat(1.0 - a) + @as(Vec3, .{ 0.5, 0.7, 1.0 }) * vsplat(a);
 }
 
@@ -114,12 +124,12 @@ pub fn main() !void {
 
     const f_img_width: f64 = @as(f64, @floatFromInt(img_width));
     const f_img_height: f64 = @as(f64, @floatFromInt(img_height));
+
     const focal_length: f64 = 1.0;
     const viewport_height: f64 = 2.0;
     const viewport_width: f64 = viewport_height * (f_img_width / f_img_height);
 
-    const point3: Vec3 = .{ 0.0, 0.0, 0.0 };
-    const camera_center = point3;
+    const camera_center: Vec3 = .{ 0.0, 0.0, 0.0 };
 
     const viewport_u: Vec3 = .{ viewport_width, 0.0, 0.0 };
     const viewport_v: Vec3 = .{ 0.0, -viewport_height, 0.0 };
@@ -131,6 +141,12 @@ pub fn main() !void {
         camera_center - @as(Vec3, .{ 0.0, 0.0, focal_length }) - viewport_u / vsplat(2.0) - viewport_v / vsplat(2.0);
 
     const pixel00_loc = viewport_upper_left + vsplat(0.5) * (pixel_delta_u + pixel_delta_v);
+
+    var world_objs = [_]Hittable{
+        .{ .sphere = Sphere{ .center = .{ 0.0, 0.0, -1.0 }, .radius = 0.5 } },
+        .{ .sphere = Sphere{ .center = .{ 0.0, -100.5, -1.0 }, .radius = 100.0 } },
+    };
+    const world = HittableList{ .objects = world_objs[0..] };
 
     const root_node = std.Progress.start(.{ .draw_buffer = &pbuf, .root_name = "raytracing" });
     defer root_node.end();
@@ -144,12 +160,13 @@ pub fn main() !void {
         for (0..img_width) |w| {
             const fw: f64 = @floatFromInt(w);
             const fh: f64 = @floatFromInt(h);
+
             const pixel_center = pixel00_loc + pixel_delta_u * vsplat(fw) + pixel_delta_v * vsplat(fh);
 
             const ray_direction = pixel_center - camera_center;
             const r = Ray{ .origin = camera_center, .dir = ray_direction };
 
-            const color = ray_color(r);
+            const color = ray_color(r, &world);
             try write_color(color);
         }
     }
